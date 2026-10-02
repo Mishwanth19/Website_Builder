@@ -49,7 +49,7 @@ if (contactForm) {
 // --- Booking system JS ---
 const bookingApiBase = window.location.hostname === 'localhost'
   ? 'http://localhost:8787'
-  : '';  // On Pages, same origin
+  : 'https://lumiere-bridal.mishwanth19.workers.dev';  // On Pages, same origin
 
 const servicePrices = {
   'Bridal makeup': 20000,
