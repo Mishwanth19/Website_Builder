@@ -1,0 +1,16 @@
+name = "lumiere-bridal"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lumiere-appointments"
+database_id = "318d60d3-c413-4ef6-a754-cd63e45717b0"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "lumiere-assets"
+
+
+[triggers]
+crons = ["0 9 * * *"]
