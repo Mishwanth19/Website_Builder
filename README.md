@@ -15,32 +15,23 @@ A complete appointment booking system for a bridal makeup artist, built on Cloud
 
 ## Project Structure
 
-```
+```text
 lumiere-bridal/
-├── public/                    # Static site (deployed to Cloudflare Pages)
-│   ├── index.html             # Main page
+├── public/                  # Cloudflare Pages website
+│   ├── index.html
 │   ├── css/
-│   │   └── styles.css         # All styles
-│   └── js/
-│       └── main.js            # Frontend logic + booking
+│   └── js/main.js
 ├── src/
-│   ├── index.ts               # Worker entry point
-│   ├── scheduler.ts           # Daily cron jobs (reminders, follow-ups)
-│   ├── types.ts               # TypeScript types
-│   └── routes/                # API route handlers
-│       ├── availability.ts    # GET /api/availability
-│       ├── book.ts            # POST /api/book
-│       ├── appointments.ts    # GET /api/appointments
-│       ├── contact.ts         # POST /api/contact
-│       ├── status.ts          # PATCH /api/appointments
-│       ├── client-view.ts     # GET /api/client-view
-│       ├── admin-view.ts      # GET /api/admin-view
-│       ├── services.ts        # GET /api/services
-│       └── health.ts          # GET /health
-├── migrations/
-│   └── 0001_init_schema.sql   # D1 database schema
-├── wrangler.toml              # Cloudflare config
-└── package.json               # npm scripts
+│   ├── index.ts             # Cloudflare Worker entry point
+│   ├── api/                 # HTTP handlers
+│   ├── app/                 # Router, middleware, composition
+│   ├── modules/             # Booking, auth, customers, services, etc.
+│   ├── infrastructure/      # D1, crypto, messaging, clock adapters
+│   ├── config/
+│   └── shared/
+├── migrations/              # Ordered D1 migrations
+├── wrangler.toml
+└── package.json
 ```
 
 ## Quick Start
@@ -67,7 +58,17 @@ npx wrangler d1 create lumiere-appointments
 npx wrangler d1 migrations apply lumiere-appointments --local
 ```
 
-### 5. Start development server
+### 5. Set up environment variables
+```bash
+# Copy example file
+cp .dev.vars.example .dev.vars
+
+# Edit .dev.vars with your credentials
+# For local development, .dev.vars is used automatically
+# For production, use wrangler secret put
+```
+
+### 6. Start development server
 ```bash
 npm run dev
 # Opens at http://localhost:8787
@@ -93,8 +94,13 @@ npx wrangler deploy
 | POST | `/api/contact` | Submit inquiry (no time slot) |
 | GET | `/api/appointments?status=X&date=X&limit=50` | List appointments |
 | PATCH | `/api/appointments` | Update status `{id, status}` |
-| GET | `/api/client-view?phone=X` | View client's appointments |
-| GET | `/api/admin-view?view=today|upcoming|pending|all` | Admin dashboard view |
+| GET | `/api/client-view` | View authenticated customer's bookings |
+| GET | `/api/admin-view?view=today|upcoming|pending|all` | Admin/staff dashboard view |
+| POST | `/api/auth/login` | Admin login; session cookie is issued |
+| GET | `/api/auth/verify` | Verify current session |
+| POST | `/api/auth/logout` | End current session |
+| POST | `/api/auth/customer/request-otp` | Request customer phone OTP |
+| POST | `/api/auth/customer/verify-otp` | Verify OTP and create customer session |
 
 ## Database Schema
 
@@ -132,13 +138,31 @@ Set via `wrangler secret put` or dashboard:
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
 | `TWILIO_FROM` | Twilio phone number (verified) |
 | `ARTIST_PHONE` | Artist's phone for notifications |
+| `ADMIN_USERNAME` | Admin username (default: admin) |
+| `ADMIN_PASSWORD` | Development-only admin password; use `ADMIN_PASSWORD_HASH` in production |
 
 ```bash
 npx wrangler secret put TWILIO_ACCOUNT_SID
 npx wrangler secret put TWILIO_AUTH_TOKEN
 npx wrangler secret put TWILIO_FROM
 npx wrangler secret put ARTIST_PHONE
+npx wrangler secret put ADMIN_USERNAME
+npx wrangler secret put ADMIN_PASSWORD
 ```
+
+**Production security:** set `ADMIN_PASSWORD_HASH` rather than `ADMIN_PASSWORD`, configure `ALLOWED_ORIGINS` to the real website origin(s), and keep Twilio/provider credentials in Cloudflare secrets.
+
+## Test Users
+
+### Admin Access
+- **Username**: `admin`
+- **Password**: `admin123`
+- Access via: Admin link in navigation menu → #admin-login
+
+### Client Access
+- Customer access uses a phone OTP session.
+- The customer must verify the phone number before viewing bookings.
+- Access via: "My Appointments" link in navigation menu → #my-appointments
 
 ## SMS/WhatsApp Integration
 
