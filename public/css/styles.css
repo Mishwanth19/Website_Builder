@@ -198,7 +198,8 @@ blockquote cite { color: var(--mute); font-style: normal; font-size: 14px; }
 }
 
 .booking-form,
-.contact form {
+.contact form,
+#contact form {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -294,10 +295,13 @@ textarea:focus {
   display: none;
 }
 
+#ok[hidden] { display: none !important; }
+#ok.success, #ok.error { display: block; }
+
 #booking-status.success,
 #client-auth-status.success,
 #admin-login-status.success,
-#ok {
+#ok.success {
   display: block;
   background: #e8f5ee;
   color: var(--success);
@@ -306,7 +310,8 @@ textarea:focus {
 
 #booking-status.error,
 #client-auth-status.error,
-#admin-login-status.error {
+#admin-login-status.error,
+#ok.error {
   display: block;
   background: #fdecee;
   color: var(--error);
@@ -558,3 +563,100 @@ body.mode-scroll main {
 
 body.mode-pages .page { display: none; }
 body.mode-pages .page.on { display: block; }
+
+
+/* Contact location map */
+.map-card {
+  margin-top: 24px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(61, 42, 46, .06);
+}
+.map-embed {
+  display: block;
+  width: 100%;
+  height: 280px;
+  border: 0;
+  background: var(--blush);
+}
+.map-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  color: var(--plum);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.map-link:hover { color: var(--rose); }
+
+/* Admin workspace */
+#admin-dashboard > section { max-width: 1440px; }
+#admin-dashboard h2 { margin-bottom: 14px; }
+.admin-subtitle { margin: 0; color: var(--mute); }
+.admin-logout { background: #8d3446; white-space: nowrap; }
+.admin-logout:hover { background: #702838; }
+.admin-filters { margin: 24px 0; }
+.admin-filters .btn { min-width: 110px; }
+.admin-filters .btn[aria-pressed="true"] {
+  background: var(--plum);
+  color: var(--pearl);
+  border-color: var(--plum);
+}
+#admin-loading { color: var(--mute); padding: 12px 0; }
+#admin-results > h3 { font-size: 30px; margin: 28px 0 16px; }
+.admin-appointments-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.admin-appointment-card {
+  margin: 0;
+  padding: 22px;
+  min-width: 0;
+  box-shadow: 0 8px 24px rgba(61, 42, 46, .045);
+}
+.admin-appointment-card h4 { overflow-wrap: anywhere; }
+.admin-appointment-card p { overflow-wrap: anywhere; }
+.admin-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.admin-card-top h4 { margin: 0 0 10px; }
+.admin-status-field { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.admin-status-field label { margin-bottom: 8px; }
+.admin-status-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.admin-status-actions .btn { padding: 10px 18px; font-size: 13px; }
+.admin-inline-status { font-size: 13px; }
+.admin-inline-status.success { color: var(--success); }
+.admin-inline-status.error { color: var(--error); }
+.admin-login-form .btn { width: 100%; }
+.admin-login-note { color: var(--mute); font-size: 13px; margin: 16px 0 0; text-align: center; }
+#admin-login-status.success, #admin-login-status.error { display: block; }
+
+@media (max-width: 760px) {
+  .admin-appointments-list { grid-template-columns: 1fr; }
+  .map-embed { height: 240px; }
+  .admin-toolbar { align-items: flex-start; }
+}
+
+.admin-count {
+  display: inline-flex;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--blush);
+  color: var(--plum);
+  font: 500 16px Figtree, sans-serif;
+  vertical-align: middle;
+}
+.admin-notes {
+  padding: 12px 14px;
+  background: var(--pearl);
+  border-radius: 10px;
+}
+
+/* Keep private admin screens out of the public single-scroll marketing view. */
+body.mode-scroll:not(.admin-route) .page#admin-login,
+body.mode-scroll:not(.admin-route) .page#admin-dashboard { display: none !important; }
+body.mode-scroll.admin-route .page:not(.admin-current-page) { display: none !important; }

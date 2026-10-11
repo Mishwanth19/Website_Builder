@@ -3,6 +3,27 @@ const bookingApiBase = window.BOOKING_API_BASE || (window.location.hostname === 
   ? 'http://localhost:8787'
   : 'https://lumiere-bridal.mishwanth19.workers.dev');
 
+async function readApiResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+function setButtonBusy(button, busy, busyText, idleText) {
+  if (!button) return;
+  button.disabled = busy;
+  button.textContent = busy ? busyText : idleText;
+}
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Mobile menu toggle
 const side = document.getElementById('side');
 const mb = document.getElementById('mb');
@@ -36,6 +57,21 @@ function showPage(options = {}) {
   const pageId = hash.slice(1) || 'home';
   const pageEl = document.getElementById(pageId);
   const target = pageEl ? pageId : 'home';
+  const isAdminRoute = target === 'admin-login' || target === 'admin-dashboard';
+  document.body.classList.toggle('admin-route', isAdminRoute);
+  document.querySelectorAll('.page').forEach((page) => {
+    page.classList.toggle('admin-current-page', page.id === target);
+  });
+
+  if (target !== 'admin-login') clearAdminCredentials();
+  if (target !== 'contact') {
+    const contactFeedback = document.getElementById('ok');
+    if (contactFeedback) {
+      contactFeedback.hidden = true;
+      contactFeedback.textContent = '';
+      contactFeedback.className = '';
+    }
+  }
 
   if (navMode === 'pages') {
     document.querySelectorAll('.page').forEach((p) => {
@@ -74,52 +110,51 @@ document.querySelectorAll('.mode-btn').forEach((btn) => {
 });
 
 addEventListener('hashchange', () => showPage());
-setNavMode(navMode);
+// Initial navigation is applied after all route handlers and auth state are initialized.
 
-// Existing contact form handler
+// Contact form: show feedback only after a real submission result.
 const contactForm = document.getElementById('f');
 if (contactForm) {
   contactForm.addEventListener('submit', async function(e) {
     e.preventDefault();
-    
     const formData = new FormData(this);
     const data = {
-      name: formData.get('name') || this.querySelector('input[autocomplete="name"]').value,
-      phone: formData.get('phone') || this.querySelectorAll('input[type="tel"]')[0].value,
-      service: formData.get('service') || this.querySelector('#contact-service').value,
-      event_date: formData.get('event_date') || this.querySelectorAll('input[type="date"]')[0].value,
-      inputs_text: this.querySelector('textarea').value
+      name: String(formData.get('name') || '').trim(),
+      phone: String(formData.get('phone') || '').trim(),
+      service: String(formData.get('service') || '').trim(),
+      event_date: String(formData.get('event_date') || '').trim(),
+      inputs_text: String(formData.get('inputs_text') || '').trim(),
     };
-
     const submitBtn = this.querySelector('button[type="submit"]');
     const ok = document.getElementById('ok');
-    
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending...';
+    ok.hidden = true;
+    ok.textContent = '';
+    ok.className = '';
+    setButtonBusy(submitBtn, true, 'Sending…', 'Send request');
 
     try {
       const res = await fetch(`${bookingApiBase}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-
-      const result = await res.json();
-
-      if (res.ok) {
-        ok.textContent = result.message || 'Thank you. We will call you within 24 hours.';
-        ok.style.display = 'block';
-        this.reset();
-        setTimeout(() => ok.style.display = 'none', 5000);
-      } else {
-        alert(`Error: ${result.error || 'Failed to send request'}`);
+      const result = await readApiResponse(res);
+      if (!res.ok || !result.ok) {
+        throw new Error(result.error || 'We could not send your request. Please try again.');
       }
-    } catch (err) {
-      alert('Network error. Please try again.');
+      ok.textContent = result.message || 'Thank you. Your request has been received. We will contact you within 24 hours.';
+      ok.className = 'success';
+      ok.hidden = false;
+      this.reset();
+    } catch (error) {
+      ok.textContent = error instanceof Error && error.message !== 'Failed to fetch'
+        ? error.message
+        : 'Network error. Please check your connection and try again.';
+      ok.className = 'error';
+      ok.hidden = false;
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Send request';
+      setButtonBusy(submitBtn, false, 'Sending…', 'Send request');
     }
   });
 }
@@ -132,10 +167,10 @@ const servicePrices = {};
 async function loadServices() {
   try {
     const res = await fetch(`${bookingApiBase}/api/services`);
-    const data = await res.json();
+    const data = await readApiResponse(res);
     
-    if (res.ok && data.ok) {
-      servicesData = data.services;
+    if (res.ok && data.ok && Array.isArray(data.services)) {
+      servicesData = data.services.filter(service => service && typeof service.name === 'string');
       
       // Build service prices object
       servicesData.forEach(service => {
@@ -165,8 +200,10 @@ async function loadServices() {
         }
       });
       
-      // Update services page pricing
+      // Update pricing after service data is loaded.
       updateServicesPagePricing();
+      updateQuote();
+      if (weddingDateEl?.value) fetchSlots();
     }
   } catch (err) {
     console.error('Failed to load services:', err);
@@ -221,21 +258,31 @@ function updateQuote() {
   if (quotePriceEl) quotePriceEl.textContent = `₹${price.toLocaleString('en-IN')} + GST`;
 }
 
-serviceEl?.addEventListener('change', updateQuote);
+document.querySelectorAll('input[type="date"]').forEach(input => { input.min = localDateString(); });
+serviceEl?.addEventListener('change', () => {
+  updateQuote();
+  if (weddingDateEl?.value) fetchSlots();
+});
 weddingDateEl?.addEventListener('change', fetchSlots);
+updateQuote();
 
 // Fetch available slots from API
 async function fetchSlots() {
   const date = weddingDateEl.value;
   const service = serviceEl.value;
-  if (!date) return;
+  if (!date || !slotsContainerEl || !selectedSlotEl) return;
 
-  slotsContainerEl.innerHTML = '<p class="loading">Checking availability...</p>';
+  selectedSlotEl.value = '';
+  slotsContainerEl.replaceChildren();
+  const loading = document.createElement('p');
+  loading.className = 'loading';
+  loading.textContent = 'Checking availability…';
+  slotsContainerEl.appendChild(loading);
   selectedSlotEl.value = '';
 
   try {
     const res = await fetch(`${bookingApiBase}/api/availability?service=${encodeURIComponent(service)}&date=${encodeURIComponent(date)}`);
-    const data = await res.json();
+    const data = await readApiResponse(res);
     if (!res.ok) throw new Error('Availability request failed');
     if (!data || !Array.isArray(data.available)) throw new Error('Invalid availability response');
 
@@ -318,23 +365,24 @@ bookBtn?.addEventListener('click', async (e) => {
       }),
     });
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
-    if (res.ok) {
-      showBookingStatus(`✅ ${data.message}`, 'success');
+    if (res.ok && data.ok) {
+      showBookingStatus(data.message || 'Your booking request has been received.', 'success');
       // Reset form
       clientNameEl.value = '';
       clientPhoneEl.value = '';
       clientEmailEl.value = '';
       weddingDateEl.value = '';
       document.getElementById('client-inputs').value = '';
-      slotsContainerEl.innerHTML = '';
+      slotsContainerEl.replaceChildren();
       selectedSlotEl.value = '';
+      updateQuote();
     } else {
-      showBookingStatus(`❌ ${data.error || 'Booking failed'}`, 'error');
+      showBookingStatus(`Booking failed: ${data.error || 'Please check your details and try again.'}`, 'error');
     }
-  } catch (err) {
-    showBookingStatus(`❌ Network error. Please try again.`, 'error');
+  } catch {
+    showBookingStatus('Network error. If you are unsure whether the booking was created, contact the studio before submitting again.', 'error');
   } finally {
     bookBtn.disabled = false;
     bookBtn.textContent = 'Check Availability & Book';
@@ -356,6 +404,11 @@ const lookupBtn = document.getElementById('lookup-appointments-btn');
 const clientAuthStatusEl = document.getElementById('client-auth-status');
 const appointmentsLoadingEl = document.getElementById('appointments-loading');
 const appointmentsResultsEl = document.getElementById('appointments-results');
+
+function serviceDisplayName(id) {
+  const service = servicesData.find(item => String(item.id) === String(id) || item.name === id);
+  return service?.name || id || 'Appointment';
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -388,7 +441,7 @@ requestClientOtpBtn?.addEventListener('click', async (e) => {
       credentials: 'include',
       body: JSON.stringify({ phone })
     });
-    const data = await res.json();
+    const data = await readApiResponse(res);
     if (res.ok) {
       setClientAuthStatus(data.message || 'Verification code sent.', 'success');
     } else {
@@ -413,7 +466,7 @@ async function verifyCustomerOtp() {
     credentials: 'include',
     body: JSON.stringify({ phone, code })
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok || !data.ok) {
     setClientAuthStatus(data.error || 'Invalid verification code.', 'error');
     return false;
@@ -443,7 +496,7 @@ lookupBtn?.addEventListener('click', async (e) => {
     const res = await fetch(`${bookingApiBase}/api/client-view`, {
       credentials: 'include'
     });
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (res.ok && data.ok) {
       if (data.count === 0) {
@@ -454,7 +507,7 @@ lookupBtn?.addEventListener('click', async (e) => {
           <div class="appointments-list">
             ${data.bookings.map(appt => `
               <div class="appointment-card" style="border:1px solid #ddd; padding:15px; margin:10px 0; border-radius:8px;">
-                <h4>${escapeHtml(appt.serviceId)}</h4>
+                <h4>${escapeHtml(serviceDisplayName(appt.serviceId))}</h4>
                 <p><strong>Event Date:</strong> ${escapeHtml(appt.eventDate || '—')}</p>
                 <p><strong>Appointment:</strong> ${escapeHtml(appt.appointmentDate)} at ${escapeHtml(appt.appointmentTime)}</p>
                 <p><strong>Status:</strong> <span class="status-${escapeHtml(appt.status)}">${escapeHtml(appt.status.toUpperCase())}</span></p>
@@ -479,6 +532,7 @@ lookupBtn?.addEventListener('click', async (e) => {
 // --- Admin authentication and dashboard ---
 let adminAuthenticated = false;
 
+const adminLoginForm = document.getElementById('admin-login-form');
 const adminUsernameEl = document.getElementById('admin-username');
 const adminPasswordEl = document.getElementById('admin-password');
 const adminLoginBtn = document.getElementById('admin-login-btn');
@@ -486,6 +540,20 @@ const adminLoginStatusEl = document.getElementById('admin-login-status');
 const adminLogoutBtn = document.getElementById('admin-logout-btn');
 const adminLoadingEl = document.getElementById('admin-loading');
 const adminResultsEl = document.getElementById('admin-results');
+let currentAdminView = 'today';
+
+function clearAdminCredentials() {
+  const username = document.getElementById('admin-username');
+  const password = document.getElementById('admin-password');
+  if (username) username.value = '';
+  if (password) password.value = '';
+}
+
+function setAdminLoginStatus(message, type = '') {
+  if (!adminLoginStatusEl) return;
+  adminLoginStatusEl.textContent = message;
+  adminLoginStatusEl.className = type;
+}
 
 async function checkAdminAuth() {
   try {
@@ -499,19 +567,17 @@ async function checkAdminAuth() {
   }
 }
 
-adminLoginBtn?.addEventListener('click', async (e) => {
+adminLoginForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = adminUsernameEl.value.trim();
   const password = adminPasswordEl.value;
 
   if (!username || !password) {
-    adminLoginStatusEl.textContent = 'Please enter username and password';
-    adminLoginStatusEl.className = 'error';
+    setAdminLoginStatus('Please enter username and password.', 'error');
     return;
   }
 
-  adminLoginBtn.disabled = true;
-  adminLoginBtn.textContent = 'Logging in...';
+  setButtonBusy(adminLoginBtn, true, 'Signing in…', 'Login securely');
 
   try {
     const res = await fetch(`${bookingApiBase}/api/auth/login`, {
@@ -520,36 +586,45 @@ adminLoginBtn?.addEventListener('click', async (e) => {
       credentials: 'include',
       body: JSON.stringify({ username, password })
     });
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (res.ok && data.ok) {
       adminAuthenticated = true;
-      adminLoginStatusEl.textContent = 'Login successful! Redirecting...';
-      adminLoginStatusEl.className = 'success';
-      setTimeout(() => { location.hash = '#admin-dashboard'; }, 500);
+      clearAdminCredentials();
+      setAdminLoginStatus('Login successful. Opening dashboard…', 'success');
+      setTimeout(() => { location.hash = '#admin-dashboard'; }, 250);
     } else {
-      adminLoginStatusEl.textContent = data.error || 'Login failed';
-      adminLoginStatusEl.className = 'error';
+      if (adminPasswordEl) adminPasswordEl.value = '';
+      setAdminLoginStatus(data.error || 'Login failed. Check your credentials and try again.', 'error');
     }
   } catch {
-    adminLoginStatusEl.textContent = 'Network error. Please try again.';
-    adminLoginStatusEl.className = 'error';
+    if (adminPasswordEl) adminPasswordEl.value = '';
+    setAdminLoginStatus('Network error. Please try again.', 'error');
   } finally {
-    adminLoginBtn.disabled = false;
-    adminLoginBtn.textContent = 'Login';
+    setButtonBusy(adminLoginBtn, false, 'Signing in…', 'Login securely');
   }
 });
 
 adminLogoutBtn?.addEventListener('click', async () => {
+  setButtonBusy(adminLogoutBtn, true, 'Signing out…', 'Sign out');
   try {
     await fetch(`${bookingApiBase}/api/auth/logout`, { method: 'POST', credentials: 'include' });
   } finally {
     adminAuthenticated = false;
+    clearAdminCredentials();
+    if (adminResultsEl) adminResultsEl.replaceChildren();
+    setAdminLoginStatus('', '');
     location.hash = '#admin-login';
+    setButtonBusy(adminLogoutBtn, false, 'Signing out…', 'Sign out');
   }
 });
 
 async function loadAdminDashboard(view = 'today') {
+  currentAdminView = view;
+  document.querySelectorAll('.admin-filters [data-view]').forEach(btn => {
+    const active = btn.dataset.view === view;
+    btn.setAttribute('aria-pressed', String(active));
+  });
   if (!adminAuthenticated) {
     await checkAdminAuth();
     if (!adminAuthenticated) {
@@ -565,32 +640,39 @@ async function loadAdminDashboard(view = 'today') {
     const res = await fetch(`${bookingApiBase}/api/admin-view?view=${encodeURIComponent(view)}&limit=50`, {
       credentials: 'include'
     });
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (res.ok && data.ok) {
-      if (data.count === 0) {
-        adminResultsEl.textContent = 'No appointments found.';
+      if (!Array.isArray(data.appointments) || data.count === 0 || data.appointments.length === 0) {
+        adminResultsEl.textContent = view === 'pending' ? 'No pending appointments found.' : 'No appointments found for this view.';
       } else {
         adminResultsEl.innerHTML = `
-          <h3>${escapeHtml(view.charAt(0).toUpperCase() + view.slice(1))} Appointments (${data.count})</h3>
+          <h3>${escapeHtml(view.charAt(0).toUpperCase() + view.slice(1))} appointments <span class="admin-count">${Number(data.count) || 0}</span></h3>
           <div class="admin-appointments-list">
             ${data.appointments.map(appt => `
-              <div class="admin-appointment-card" style="border:1px solid #ddd; padding:15px; margin:10px 0; border-radius:8px;">
-                <h4>${escapeHtml(appt.service)}</h4>
-                <p><strong>Client:</strong> ${escapeHtml(appt.client_name)} (${escapeHtml(appt.client_phone)})</p>
-                <p><strong>Event Date:</strong> ${escapeHtml(appt.event_date || '—')}</p>
+              <article class="admin-appointment-card">
+                <div class="admin-card-top">
+                  <div><h4>${escapeHtml(appt.service)}</h4><p><strong>Client:</strong> ${escapeHtml(appt.client_name)}<br>${escapeHtml(appt.client_phone)}</p></div>
+                  <span class="status-${escapeHtml(appt.status)}">${escapeHtml(String(appt.status || 'pending').toUpperCase())}</span>
+                </div>
+                <p><strong>Event date:</strong> ${escapeHtml(appt.event_date || '—')}</p>
                 <p><strong>Appointment:</strong> ${escapeHtml(appt.appointment_date)} at ${escapeHtml(appt.appointment_time)}</p>
-                <p><strong>Status:</strong>
-                  <select class="status-select" data-id="${escapeHtml(appt.id)}" style="padding:5px; margin-left:10px;">
+                ${appt.client_email ? `<p><strong>Email:</strong> ${escapeHtml(appt.client_email)}</p>` : ''}
+                ${appt.inputs_text ? `<p class="admin-notes"><strong>Notes:</strong> ${escapeHtml(appt.inputs_text)}</p>` : ''}
+                <div class="admin-status-field">
+                  <label for="status-${escapeHtml(appt.id)}">Update status</label>
+                  <select class="status-select" id="status-${escapeHtml(appt.id)}" data-id="${escapeHtml(appt.id)}">
                     <option value="pending" ${appt.status === 'pending' ? 'selected' : ''}>Pending</option>
                     <option value="confirmed" ${appt.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
                     <option value="completed" ${appt.status === 'completed' ? 'selected' : ''}>Completed</option>
                     <option value="cancelled" ${appt.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
                   </select>
-                </p>
-                ${appt.inputs_text ? `<p><strong>Notes:</strong> ${escapeHtml(appt.inputs_text)}</p>` : ''}
-                <button class="btn o update-status-btn" data-id="${escapeHtml(appt.id)}" style="margin-top:10px; font-size:12px;">Update Status</button>
-              </div>
+                  <div class="admin-status-actions">
+                    <button class="btn o update-status-btn" type="button" data-id="${escapeHtml(appt.id)}">Save status</button>
+                    <span class="admin-inline-status" data-feedback-for="${escapeHtml(appt.id)}" role="status" aria-live="polite"></span>
+                  </div>
+                </div>
+              </article>
             `).join('')}
           </div>
         `;
@@ -631,17 +713,29 @@ function attachStatusUpdateListeners() {
           credentials: 'include',
           body: JSON.stringify({ status: newStatus })
         });
-        const data = await res.json();
+        const data = await readApiResponse(res);
+        const feedback = document.querySelector(`[data-feedback-for="${CSS.escape(id)}"]`);
         if (res.ok && data.ok) {
-          btn.textContent = 'Updated!';
-          setTimeout(() => loadAdminDashboard('today'), 500);
+          if (feedback) {
+            feedback.textContent = 'Status saved.';
+            feedback.className = 'admin-inline-status success';
+          }
+          btn.textContent = 'Saved';
+          setTimeout(() => loadAdminDashboard(currentAdminView), 650);
         } else {
-          btn.textContent = 'Failed';
-          alert(data.error || 'Failed to update status');
+          if (feedback) {
+            feedback.textContent = data.error || 'Could not update status.';
+            feedback.className = 'admin-inline-status error';
+          }
+          btn.textContent = 'Save status';
         }
       } catch {
-        btn.textContent = 'Error';
-        alert('Network error. Please try again.');
+        const feedback = document.querySelector(`[data-feedback-for="${CSS.escape(id)}"]`);
+        if (feedback) {
+          feedback.textContent = 'Network error. Please try again.';
+          feedback.className = 'admin-inline-status error';
+        }
+        btn.textContent = 'Save status';
       } finally {
         btn.disabled = false;
       }
@@ -649,4 +743,9 @@ function attachStatusUpdateListeners() {
   });
 }
 
+window.addEventListener('pageshow', () => {
+  if (adminAuthenticated || location.hash !== '#admin-login') clearAdminCredentials();
+});
+
+setNavMode(navMode);
 checkAdminAuth();

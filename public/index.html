@@ -85,7 +85,7 @@
 
     
     <div class="page" id="booking">
-      <section class="booking" id="booking"><h2>Book Your Appointment</h2>
+      <section class="booking"><h2>Book Your Appointment</h2>
         <div class="booking-form">
           <div class="form-group">
             <label>Name<br><input type="text" id="client-name" required placeholder="Your full name"></label>
@@ -163,11 +163,20 @@
 
     <div class="page" id="contact"><section class="split" style="align-items:start"><div><span class="lead">Contact</span><h2 style="margin-top:10px">Let's plan your day.</h2>
     <p style="color:var(--mute)">Share your date and venue, and we'll reply within 24 hours.</p>
-    <p><b>Studio</b><br>27, Eldams Road, Teynampet, Chennai 600018</p><p><b>Phone and WhatsApp</b><br>+91 97000 00000</p><p><b>Email</b><br>hello@lumiere.example</p><p><b>Instagram</b><br>@lumiere.bridal</p><div class="map">Map goes here</div></div>
-    <form id="f"><div class="f2"><label>Name<input required autocomplete="name"></label><label>Phone<input required type="tel" autocomplete="tel"></label></div>
-    <div class="f2"><label>Service<select name="service" id="contact-service"><option>Bridal makeup</option><option>Hair and draping</option><option>Engagement and reception</option><option>Family and guests</option><option>Private lesson</option></select></label><label>Event date<input required type="date"></label></div>
-    <label>Venue and details<textarea rows="4" placeholder="Venue, muhurtham time, number of people"></textarea></label>
-    <button class="btn" type="submit">Send request</button><div id="ok" role="status">Thank you. We will call you within 24 hours.</div></form></section></div>
+    <p><b>Studio</b><br>27, Eldams Road, Teynampet, Chennai 600018</p><p><b>Phone and WhatsApp</b><br>+91 97000 00000</p><p><b>Email</b><br>hello@lumiere.example</p><p><b>Instagram</b><br>@lumiere.bridal</p><div class="map-card">
+      <iframe
+        class="map-embed"
+        title="Map to Lumière Bridal studio on Eldams Road, Chennai"
+        src="https://maps.google.com/maps?q=27%20Eldams%20Road%2C%20Teynampet%2C%20Chennai%20600018&t=&z=15&ie=UTF8&iwloc=&output=embed"
+        loading="lazy"
+        referrerpolicy="strict-origin-when-cross-origin"
+        allowfullscreen></iframe>
+      <a class="map-link" href="https://www.google.com/maps/search/?api=1&query=27%20Eldams%20Road%2C%20Teynampet%2C%20Chennai%20600018" target="_blank" rel="noopener noreferrer">Open directions in Google Maps ↗</a>
+    </div></div>
+    <form id="f"><div class="f2"><label>Name<input name="name" required autocomplete="name" maxlength="120"></label><label>Phone<input name="phone" required type="tel" autocomplete="tel" maxlength="25"></label></div>
+    <div class="f2"><label>Service<select name="service" id="contact-service"><option>Bridal makeup</option><option>Hair and draping</option><option>Engagement and reception</option><option>Family and guests</option><option>Private lesson</option></select></label><label>Event date<input name="event_date" required type="date"></label></div>
+    <label>Venue and details<textarea name="inputs_text" rows="4" maxlength="2000" placeholder="Venue, muhurtham time, number of people"></textarea></label>
+    <button class="btn" type="submit">Send request</button><div id="ok" role="status" aria-live="polite" hidden></div></form></section></div>
 
     <div class="page" id="my-appointments"><section><span class="lead">Your Appointments</span><h2 style="margin-top:10px">View Your Bookings</h2>
     <div class="booking-form">
@@ -187,29 +196,32 @@
     </div></section></div>
 
     <div class="page" id="admin-login"><section><span class="lead">Admin Access</span><h2 style="margin-top:10px">Admin Login</h2>
-    <div class="booking-form" style="max-width:400px; margin:0 auto;">
+    <form id="admin-login-form" class="booking-form admin-login-form" autocomplete="off" style="max-width:440px; margin:0 auto;">
       <div class="form-group">
-        <label>Username<br><input type="text" id="admin-username" required placeholder="Enter username"></label>
+        <label for="admin-username">Username</label>
+        <input type="text" id="admin-username" name="username" required placeholder="Enter username" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="120">
       </div>
       <div class="form-group">
-        <label>Password<br><input type="password" id="admin-password" required placeholder="Enter password"></label>
+        <label for="admin-password">Password</label>
+        <input type="password" id="admin-password" name="password" required placeholder="Enter password" autocomplete="new-password">
       </div>
-      <button class="btn" id="admin-login-btn">Login</button>
-      <div id="admin-login-status" style="margin-top:15px;"></div>
-    </div></section></div>
+      <button class="btn" id="admin-login-btn" type="submit">Login securely</button>
+      <div id="admin-login-status" role="status" aria-live="polite"></div>
+      <p class="admin-login-note">Administrative access only. Sign out when you finish.</p>
+    </form></section></div>
 
     <div class="page" id="admin-dashboard"><section><span class="lead">Admin Dashboard</span><h2 style="margin-top:10px">Manage Appointments</h2>
-    <div style="margin-bottom:20px;">
-      <button class="btn" id="admin-logout-btn" style="background:#b23a55;">Logout</button>
+    <div class="admin-toolbar">
+      <p class="admin-subtitle">Review requests and keep appointment statuses up to date.</p>
+      <button class="btn admin-logout" id="admin-logout-btn" type="button">Sign out</button>
     </div>
-    <div class="admin-filters" style="margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn o" data-view="today">Today</button>
-      <button class="btn o" data-view="upcoming">Upcoming</button>
-      <button class="btn o" data-view="pending">Pending</button>
-      <button class="btn o" data-view="all">All</button>
+    <div class="admin-filters" role="group" aria-label="Filter appointments">
+      <button class="btn o" type="button" data-view="today" aria-pressed="true">Today</button>
+      <button class="btn o" type="button" data-view="upcoming" aria-pressed="false">Upcoming</button>
+      <button class="btn o" type="button" data-view="pending" aria-pressed="false">Pending</button>
     </div>
-    <div id="admin-loading" style="display:none;">Loading appointments...</div>
-    <div id="admin-results"></div>
+    <div id="admin-loading" role="status" aria-live="polite" style="display:none;">Loading appointments…</div>
+    <div id="admin-results" aria-live="polite"></div>
   </main>
 
   <footer><span>© 2026 Lumière Bridal Makeup. Teynampet, Chennai.</span><span>+91 97000 00000 · @lumiere.bridal</span></footer>
