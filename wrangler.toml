@@ -14,3 +14,8 @@ database_id = "318d60d3-c413-4ef6-a754-cd63e45717b0"
 
 [triggers]
 crons = ["0 9 * * *"]
+
+
+[vars]
+ALLOWED_ORIGINS = "https://website-builder-c6m.pages.dev"
+BUSINESS_TIMEZONE = "Asia/Kolkata"

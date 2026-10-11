@@ -1,8 +1,9 @@
 import type { ScheduledController, ExecutionContext } from '@cloudflare/workers-types'
 import { createModules } from './app/composition'
 import { Router } from './app/router'
-import { applyCors, handleCors, withRequestContext, type RequestContext, parseAllowedOrigins } from './app/middleware'
+import { applyCors, applySecurityHeaders, enforceRateLimit, handleCors, withRequestContext, type RequestContext, parseAllowedOrigins } from './app/middleware'
 import { AppError } from './shared/errors'
+import { logger } from './shared/logging'
 import { handleLogin, handleVerify, handleLogout, handleRequestCustomerOtp, handleVerifyCustomerOtp } from './api/auth'
 import { handleGetAvailability, handleCreateBooking, handleGetBookings, handleUpdateBookingStatus, handleClientBookings, handleLegacyAdminView } from './api/bookings'
 import { handleGetServices, handleGetService } from './api/services'
@@ -13,6 +14,8 @@ import type { Env } from './config/environment'
 function buildRouter(): Router {
   const router = new Router()
 
+  router.get('/healthz', handleHealth)
+  router.get('/readyz', handleHealth)
   router.get('/health', handleHealth)
   router.get('/api/health', handleHealth)
 
@@ -49,7 +52,13 @@ const router = buildRouter()
 let modulesPromise: Promise<Awaited<ReturnType<typeof createModules>>> | undefined
 
 function getModules(env: Env) {
-  if (!modulesPromise) modulesPromise = createModules(env)
+  if (!modulesPromise) {
+    const pending = createModules(env)
+    modulesPromise = pending
+    void pending.catch(() => {
+      if (modulesPromise === pending) modulesPromise = undefined
+    })
+  }
   return modulesPromise
 }
 
@@ -93,16 +102,25 @@ function errorResponse(error: unknown): Response {
 async function handleRequest(request: Request, env: Env): Promise<Response> {
   const allowedOrigins = parseAllowedOrigins(env)
   const preflight = handleCors(request, allowedOrigins)
-  if (preflight) return preflight
+  if (preflight) return applySecurityHeaders(preflight)
 
-  const modules = await getModules(env)
-  return withRequestContext(request, env, modules, async (ctx: RequestContext) => {
-    try {
-      return await router.handle(request, ctx)
-    } catch (error) {
-      return errorResponse(error)
-    }
-  }).then(response => applyCors(request, response, allowedOrigins))
+  try {
+    const limited = await enforceRateLimit(request, env)
+    if (limited) return applySecurityHeaders(applyCors(request, limited, allowedOrigins))
+
+    const modules = await getModules(env)
+    const response = await withRequestContext(
+      request,
+      env,
+      modules,
+      (ctx: RequestContext) => router.handle(request, ctx),
+    )
+    return applySecurityHeaders(applyCors(request, response, allowedOrigins))
+  } catch (error) {
+    logger.error('Request failed before a response was produced', error instanceof Error ? error : new Error('Unknown request failure'))
+    const response = errorResponse(error)
+    return applySecurityHeaders(applyCors(request, response, allowedOrigins))
+  }
 }
 
 export default {
@@ -113,5 +131,12 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const modules = await getModules(env)
     await modules.scheduler.executeAll()
+    // Expired fixed-window buckets are safe to remove; failures here must not undo scheduled work.
+    try {
+      await env.DB.prepare('DELETE FROM request_rate_limits WHERE expires_at < ?')
+        .bind(Math.floor(Date.now() / 1000)).run()
+    } catch {
+      // The next scheduled run can retry cleanup. Request limiting remains functional.
+    }
   },
 }

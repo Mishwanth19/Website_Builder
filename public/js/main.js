@@ -234,36 +234,41 @@ async function fetchSlots() {
   selectedSlotEl.value = '';
 
   try {
-    const res = await fetch(`${bookingApiBase}/api/availability?service=${encodeURIComponent(service)}&date=${date}`);
+    const res = await fetch(`${bookingApiBase}/api/availability?service=${encodeURIComponent(service)}&date=${encodeURIComponent(date)}`);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to fetch');
+    if (!res.ok) throw new Error('Availability request failed');
+    if (!data || !Array.isArray(data.available)) throw new Error('Invalid availability response');
 
     if (data.available.length === 0) {
-      slotsContainerEl.innerHTML = '<p class="no-slots">No slots available for this date.</p>';
+      const message = document.createElement('p');
+      message.className = 'no-slots';
+      message.textContent = 'No slots available for this date.';
+      slotsContainerEl.replaceChildren(message);
     } else {
-      slotsContainerEl.innerHTML = data.available.map(formatSlot).join('');
+      const buttons = data.available.map(formatSlot).filter(Boolean);
+      slotsContainerEl.replaceChildren(...buttons);
       attachSlotListeners();
     }
-  } catch (err) {
-    slotsContainerEl.innerHTML = `<p class="error">Error: ${err.message}</p>`;
+  } catch {
+    const message = document.createElement('p');
+    message.className = 'error';
+    message.textContent = 'Unable to check availability. Please try again.';
+    slotsContainerEl.replaceChildren(message);
   }
 }
 
-// Format a time slot button
+// Build slot buttons with DOM APIs; never interpolate API data into HTML.
 function formatSlot(time) {
-  return `<button type="button" class="slot-btn" data-slot="${time}">
-    ${time.replace(':', '.00 ')}
-  </button>`;
-}
-
-// Format "09:00" → "09.00 AM" or "14:00" → "02.00 PM"
-function formatSlot(time) {
-  let [h, m] = time.split(':').map(Number);
+  if (typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const [h, m] = time.split(':').map(Number);
   const ampm = h < 12 ? 'AM' : 'PM';
   const hour = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-  return `<button type="button" class="slot-btn" data-slot="${time}">
-    ${String(hour).padStart(2, '0')}.${String(m).padStart(2, '0')} ${ampm}
-  </button>`;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'slot-btn';
+  button.dataset.slot = time;
+  button.textContent = `${String(hour).padStart(2, '0')}.${String(m).padStart(2, '0')} ${ampm}`;
+  return button;
 }
 
 // Attach click listeners to slot buttons

@@ -10,15 +10,26 @@ export class CryptoService {
 
   async verifyPassword(password: string, stored: string): Promise<boolean> {
     const parts = stored.split('$')
-    if (parts.length !== 4 || parts[0] !== 'pbkdf2') {
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2' || !/^\d+$/.test(parts[1])) {
+      return false
+    }
+    // Bound work factor and validate encoded sizes before invoking WebCrypto.
+    const iterations = Number(parts[1])
+    if (!Number.isSafeInteger(iterations) || iterations < 100_000 || iterations > 1_000_000) {
+      return false
+    }
+    if (!/^[0-9a-f]{32}$/i.test(parts[2]) || !/^[0-9a-f]{64}$/i.test(parts[3])) {
       return false
     }
 
-    const iterations = Number(parts[1])
     const salt = this.fromHex(parts[2])
     const expected = this.fromHex(parts[3])
-    const actual = await this.pbkdf2(password, salt, iterations)
-    return this.timingSafeEqual(actual, expected)
+    try {
+      const actual = await this.pbkdf2(password, salt, iterations)
+      return this.timingSafeEqual(actual, expected)
+    } catch {
+      return false
+    }
   }
 
   generateToken(length: number = 32): string {

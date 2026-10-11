@@ -1,19 +1,19 @@
 import type { RequestContext } from '../app/middleware'
-import { validateRequired, DateValidator, PhoneValidator } from '../shared/validation'
+import { validateRequired, DateValidator, PhoneValidator, EmailValidator, readJsonObject, requireString } from '../shared/validation'
 
 export async function handleCreateInquiry(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   validateRequired(body, ['name', 'phone'])
-  new PhoneValidator().validate(String(body.phone))
-  if (body.eventDate) new DateValidator().validate(String(body.eventDate))
-  const inquiry = await ctx.modules.inquiries.create({
-    name: String(body.name),
-    phone: String(body.phone),
-    email: body.email ? String(body.email) : undefined,
-    serviceId: body.serviceId ? String(body.serviceId) : undefined,
-    eventDate: body.eventDate ? String(body.eventDate) : undefined,
-    notes: body.notes ? String(body.notes) : undefined,
-  })
+  const name = requireString(body.name, 'name', { max: 120 })!
+  const phone = requireString(body.phone, 'phone', { max: 32 })!
+  new PhoneValidator().validate(phone)
+  const email = requireString(body.email, 'email', { max: 254, optional: true })
+  if (email) new EmailValidator().validate(email)
+  const serviceId = requireString(body.serviceId, 'serviceId', { max: 128, optional: true })
+  const eventDate = requireString(body.eventDate, 'eventDate', { max: 10, optional: true })
+  if (eventDate) new DateValidator().validate(eventDate)
+  const notes = requireString(body.notes, 'notes', { max: 2000, optional: true })
+  const inquiry = await ctx.modules.inquiries.create({ name, phone, email, serviceId, eventDate, notes })
   return Response.json({ ok: true, inquiry }, { status: 201 })
 }
 
@@ -27,23 +27,23 @@ export async function handleGetInquiries(ctx: RequestContext, request: Request):
 
 
 export async function handleLegacyContact(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   validateRequired(body, ['name', 'phone', 'service', 'event_date'])
-  new PhoneValidator().validate(String(body.phone))
-  new DateValidator().validate(String(body.event_date))
+  const name = requireString(body.name, 'name', { max: 120 })!
+  const phone = requireString(body.phone, 'phone', { max: 32 })!
+  new PhoneValidator().validate(phone)
+  const email = requireString(body.email, 'email', { max: 254, optional: true })
+  if (email) new EmailValidator().validate(email)
+  const serviceName = requireString(body.service, 'service', { max: 160 })!
+  const eventDate = requireString(body.event_date, 'event_date', { max: 10 })!
+  new DateValidator().validate(eventDate)
+  const notes = requireString(body.inputs_text, 'inputs_text', { max: 2000, optional: true })
   const services = await ctx.modules.services.list({ activeOnly: false })
-  const service = services.find(s => s.name.toLowerCase() === String(body.service).toLowerCase())
-  const inquiry = await ctx.modules.inquiries.create({
-    name: String(body.name),
-    phone: String(body.phone),
-    email: body.email ? String(body.email) : undefined,
-    serviceId: service?.id,
-    eventDate: String(body.event_date),
-    notes: body.inputs_text ? String(body.inputs_text) : undefined,
-  })
+  const service = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
+  const inquiry = await ctx.modules.inquiries.create({ name, phone, email, serviceId: service?.id, eventDate, notes })
   return Response.json({
     ok: true,
     inquiry,
-    message: `Thank you, ${body.name}. Your request has been received.`,
+    message: `Thank you, ${name}. Your request has been received.`,
   }, { status: 201 })
 }

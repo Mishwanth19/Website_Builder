@@ -1,10 +1,15 @@
 import type { RequestContext } from '../app/middleware'
-import { validateRequired, DateValidator, TimeValidator, PhoneValidator } from '../shared/validation'
+import { validateRequired, DateValidator, TimeValidator, PhoneValidator, EmailValidator, readJsonObject, requireString } from '../shared/validation'
 import { ValidationError } from '../shared/errors'
 import type { BookingStatus } from '../modules/booking'
 
 async function resolveService(ctx: RequestContext, value: string) {
-  try { return await ctx.modules.services.getById(value) } catch {}
+  try {
+    return await ctx.modules.services.getById(value)
+  } catch (error) {
+    // Only fall back for a not-found result. Infrastructure failures must propagate.
+    if (!(error instanceof Error) || !('code' in error) || (error as { code?: unknown }).code !== 'SERVICE_NOT_FOUND') throw error
+  }
   const services = await ctx.modules.services.list({ activeOnly: false })
   const normalized = value.trim().toLowerCase()
   const service = services.find(s => s.name.trim().toLowerCase() === normalized)
@@ -17,6 +22,7 @@ export async function handleGetAvailability(ctx: RequestContext, request: Reques
   const serviceValue = url.searchParams.get('serviceId') ?? url.searchParams.get('service')
   const date = url.searchParams.get('date')
   if (!serviceValue) throw new ValidationError('Service is required')
+  if (serviceValue.length > 160) throw new ValidationError('Service identifier is too long')
   if (!date) throw new ValidationError('Date parameter is required')
   new DateValidator().validate(date)
   const service = await resolveService(ctx, serviceValue)
@@ -33,7 +39,7 @@ export async function handleGetAvailability(ctx: RequestContext, request: Reques
 }
 
 export async function handleCreateBooking(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   const isLegacy = body.service !== undefined
   validateRequired(
     body,
@@ -41,26 +47,30 @@ export async function handleCreateBooking(ctx: RequestContext, request: Request)
       ? ['client_name', 'client_phone', 'service', 'appointment_date', 'appointment_time']
       : ['client_name', 'client_phone', 'serviceId', 'appointmentDate', 'appointmentTime'],
   )
-  const phone = String(body.client_phone)
+  const name = requireString(body.client_name, 'client_name', { max: 120 })!
+  const phone = requireString(body.client_phone, 'client_phone', { max: 32 })!
   new PhoneValidator().validate(phone)
-  const service = await resolveService(ctx, String(isLegacy ? body.service : body.serviceId))
-  const date = String(isLegacy ? body.appointment_date : body.appointmentDate)
-  const time = String(isLegacy ? body.appointment_time : body.appointmentTime)
+  const email = requireString(body.client_email, 'client_email', { max: 254, optional: true })
+  if (email) new EmailValidator().validate(email)
+  const serviceValue = requireString(isLegacy ? body.service : body.serviceId, isLegacy ? 'service' : 'serviceId', { max: 160 })!
+  const service = await resolveService(ctx, serviceValue)
+  const date = requireString(isLegacy ? body.appointment_date : body.appointmentDate, 'appointmentDate', { max: 10 })!
+  const time = requireString(isLegacy ? body.appointment_time : body.appointmentTime, 'appointmentTime', { max: 5 })!
   new DateValidator().validate(date)
   new TimeValidator().validate(time)
 
-  const customer = await ctx.modules.customers.findOrCreate({
-    name: String(body.client_name),
-    phone,
-    email: body.client_email ? String(body.client_email) : undefined,
-  })
+  const eventDateRaw = body.eventDate ?? body.event_date
+  const eventDate = requireString(eventDateRaw, 'eventDate', { max: 10, optional: true })
+  if (eventDate) new DateValidator().validate(eventDate)
+  const notes = requireString(body.notes ?? body.inputs_text, 'notes', { max: 2000, optional: true })
+  const customer = await ctx.modules.customers.findOrCreate({ name, phone, email })
   const booking = await ctx.modules.bookings.create({
     customerId: customer.id,
     serviceId: service.id,
     appointmentDate: date,
     appointmentTime: time,
-    eventDate: body.eventDate ? String(body.eventDate) : (body.event_date ? String(body.event_date) : null),
-    notes: body.notes ? String(body.notes) : (body.inputs_text ? String(body.inputs_text) : null),
+    eventDate: eventDate ?? null,
+    notes: notes ?? null,
   })
   return Response.json({
     ok: true,
@@ -82,11 +92,14 @@ export async function handleGetBookings(ctx: RequestContext, request: Request): 
 }
 
 export async function handleUpdateBookingStatus(ctx: RequestContext, request: Request, params: Record<string, string>): Promise<Response> {
-  const body = await request.json() as { id?: string; status?: BookingStatus }
-  const id = params.id || body.id
+  const body = await readJsonObject(request)
+  const id = params.id || requireString(body.id, 'id', { max: 128, optional: true })
   if (!id) throw new ValidationError('Booking id is required')
-  if (!body.status) throw new ValidationError('Status is required')
-  const booking = await ctx.modules.bookings.updateStatus(id, body.status)
+  const status = requireString(body.status, 'status', { max: 20 })
+  if (!['pending', 'confirmed', 'completed', 'cancelled'].includes(status!)) {
+    throw new ValidationError('Invalid booking status')
+  }
+  const booking = await ctx.modules.bookings.updateStatus(id, status as BookingStatus)
   return Response.json({ ok: true, booking, updated: booking.status })
 }
 

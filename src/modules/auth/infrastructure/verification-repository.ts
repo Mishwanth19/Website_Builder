@@ -31,11 +31,17 @@ export class D1VerificationRepository implements VerificationRepository {
     ).run()
     return challenge
   }
-  async incrementAttempts(id: string, now: Date): Promise<void> {
-    await this.db.prepare('UPDATE verification_challenges SET attempts = attempts + 1, updated_at = ? WHERE id = ?').bind(now.toISOString(), id).run()
+  async incrementAttempts(id: string, now: Date): Promise<boolean> {
+    const result = await this.db.prepare(
+      'UPDATE verification_challenges SET attempts = attempts + 1, updated_at = ? WHERE id = ? AND verified = 0 AND attempts < 3 AND expires_at >= ?',
+    ).bind(now.toISOString(), id, now.toISOString()).run()
+    return (result.meta?.changes ?? 0) === 1
   }
-  async markVerified(id: string, now: Date): Promise<void> {
-    await this.db.prepare('UPDATE verification_challenges SET verified = 1, updated_at = ? WHERE id = ?').bind(now.toISOString(), id).run()
+  async markVerified(id: string, now: Date): Promise<boolean> {
+    const result = await this.db.prepare(
+      'UPDATE verification_challenges SET verified = 1, updated_at = ? WHERE id = ? AND verified = 0 AND attempts < 3 AND expires_at >= ?',
+    ).bind(now.toISOString(), id, now.toISOString()).run()
+    return (result.meta?.changes ?? 0) === 1
   }
   async deleteExpired(now: Date): Promise<number> {
     const result = await this.db.prepare('DELETE FROM verification_challenges WHERE expires_at < ?').bind(now.toISOString()).run()

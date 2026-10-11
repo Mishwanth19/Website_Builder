@@ -1,14 +1,14 @@
 import type { RequestContext } from '../app/middleware'
-import { validateRequired } from '../shared/validation'
+import { validateRequired, readJsonObject, requireString, PhoneValidator, EmailValidator } from '../shared/validation'
 import { sessionCookieHeader, clearSessionCookieHeader, readSessionToken } from '../app/middleware'
+import { ValidationError } from '../shared/errors'
 
 export async function handleLogin(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   validateRequired(body, ['username', 'password'])
-  const result = await ctx.modules.auth.login({
-    username: String(body.username),
-    password: String(body.password),
-  })
+  const username = requireString(body.username, 'username', { max: 128 })!
+  const password = requireString(body.password, 'password', { max: 1024 })!
+  const result = await ctx.modules.auth.login({ username, password })
   const response = Response.json({ ok: true, userId: result.userId, userType: result.userType })
   response.headers.set('Set-Cookie', sessionCookieHeader(result.token, request))
   return response
@@ -31,14 +31,14 @@ export async function handleLogout(ctx: RequestContext, request: Request): Promi
 }
 
 export async function handleRequestCustomerOtp(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   validateRequired(body, ['phone'])
-  const phone = String(body.phone)
-  const customer = await ctx.modules.customers.findOrCreate({
-    name: body.name ? String(body.name) : 'Customer',
-    phone,
-    email: body.email ? String(body.email) : undefined,
-  })
+  const phone = requireString(body.phone, 'phone', { max: 32 })!
+  new PhoneValidator().validate(phone)
+  const name = requireString(body.name, 'name', { max: 120, optional: true }) ?? 'Customer'
+  const email = requireString(body.email, 'email', { max: 254, optional: true })
+  if (email) new EmailValidator().validate(email)
+  const customer = await ctx.modules.customers.findOrCreate({ name, phone, email })
 
   await ctx.modules.auth.requestVerification({
     userId: customer.id,
@@ -51,10 +51,13 @@ export async function handleRequestCustomerOtp(ctx: RequestContext, request: Req
 }
 
 export async function handleVerifyCustomerOtp(ctx: RequestContext, request: Request): Promise<Response> {
-  const body = await request.json() as Record<string, unknown>
+  const body = await readJsonObject(request)
   validateRequired(body, ['phone', 'code'])
-  const phone = String(body.phone)
-  const result = await ctx.modules.auth.verifyCode({ identifier: phone, code: String(body.code) })
+  const phone = requireString(body.phone, 'phone', { max: 32 })!
+  new PhoneValidator().validate(phone)
+  const code = requireString(body.code, 'code', { min: 6, max: 6 })!
+  if (!/^\d{6}$/.test(code)) throw new ValidationError('Invalid verification code format')
+  const result = await ctx.modules.auth.verifyCode({ identifier: phone, code })
   const token = await ctx.modules.auth.createCustomerSession(result.userId)
   const response = Response.json({ ok: true, userId: result.userId })
   response.headers.set('Set-Cookie', sessionCookieHeader(token, request))

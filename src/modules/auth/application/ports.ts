@@ -29,8 +29,8 @@ export interface VerificationRepository {
   findById(id: string): Promise<VerificationChallenge | null>
   findByIdentifier(identifier: string): Promise<VerificationChallenge | null>
   create(challenge: VerificationChallenge): Promise<VerificationChallenge>
-  incrementAttempts(id: string, now: Date): Promise<void>
-  markVerified(id: string, now: Date): Promise<void>
+  incrementAttempts(id: string, now: Date): Promise<boolean>
+  markVerified(id: string, now: Date): Promise<boolean>
   deleteExpired(now: Date): Promise<number>
 }
 

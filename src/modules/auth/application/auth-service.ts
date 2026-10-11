@@ -192,11 +192,15 @@ export class AuthService {
     }
 
     if (challenge.code !== input.code) {
-      await this.verificationRepository.incrementAttempts(challenge.id, this.clock.now())
+      const incremented = await this.verificationRepository.incrementAttempts(challenge.id, this.clock.now())
+      if (!incremented) throw new TooManyVerificationAttemptsError()
       throw new AuthenticationError('Invalid code')
     }
 
-    await this.verificationRepository.markVerified(challenge.id, this.clock.now())
+    const consumed = await this.verificationRepository.markVerified(challenge.id, this.clock.now())
+    if (!consumed) {
+      throw new AuthenticationError('Invalid or expired verification code')
+    }
 
     return {
       userId: challenge.userId,
